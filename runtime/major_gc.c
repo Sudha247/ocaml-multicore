@@ -547,13 +547,65 @@ static void mark_stack_push_act(void* state, value v, value* ignored) {
 }
 
 void caml_darken_cont(value cont);
+/*
+static intnat mark_slice(intnat work){
+  struct mark_stack* stk = Caml_state->mark_stack;
+  mark_entry me = {0, 0, 0};
+
+  while (1)
+  {
+    int can_mark = 0;
+
+    if(me.offset == me.end){
+      if(stk->count > 0){
+        me = stk->size[--stk->count];
+        can_mark = 1;
+      }
+    }
+
+    else
+    {
+      can_mark = 1
+    }
+
+    if (work <= 0){
+      if(can_mark){
+        work -= mark_stack_push(stk, me.block, me.offset, me.end);
+      }
+      break;
+    }
+
+    if(can_mark){
+      CAMLassert(Is_block(me.block) &&
+                 Is_black_val (me.block) &&
+                 Tag_val(me.block) < No_scan_tag &&
+                 Tag_val(me.block) != Cont_tag);
+
+      // mark_slice_darken ()
+
+      work--;
+
+      if(me.offset == me.end){
+        work--;
+      }
+
+      else if (overflow)
+    }
+    
+  }
+  
+}
+TODO: Marking like trunk.
+*/
 static intnat do_some_marking(struct mark_stack* stk, intnat budget) {
   while (stk->count > 0) {
     mark_entry e = stk->stack[--stk->count];
-    while (e.offset != e.end) {
+    intnat end = e.end;
+    while (e.offset != end) {
+      end = e.end;
       value v;
       if (budget <= 0) {
-        budget -= mark_stack_push(stk, e.block, e.offset, e.end);
+        budget -= mark_stack_push(stk, e.block, e.offset, end);
         return budget;
       }
       budget--;
@@ -572,7 +624,7 @@ static intnat do_some_marking(struct mark_stack* stk, intnat budget) {
         if (Has_status_hd(hd, global.UNMARKED)) {
           Caml_state->stat_blocks_marked++;
           if (Tag_hd(hd) == Cont_tag) {
-            budget -= mark_stack_push(stk, e.block, e.offset, e.end);
+            budget -= mark_stack_push(stk, e.block, e.offset, end);
             caml_darken_cont(v);
             e = (mark_entry){0};
             budget -= Wosize_hd(hd); /* credit for header, done with mark_entry */
@@ -594,14 +646,16 @@ again:
             }
             if (Tag_hd(hd) < No_scan_tag) {
               mark_entry child = {v, 0, Wosize_hd(hd)};
-              budget -= mark_stack_push(stk, e.block, e.offset, e.end);
+              budget -= mark_stack_push(stk, e.block, e.offset, end);
               e = child;
+              end = e.end;
             } else {
               budget -= Whsize_hd(hd);
             }
           }
         }
       }
+      end = e.end;
     }
     budget--; /* credit for header */
   }
