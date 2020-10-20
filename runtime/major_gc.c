@@ -526,7 +526,7 @@ static void mark_stack_push(struct mark_stack* stk, value block,
       break;
   }
 
-  if (offset == block_wsz){
+  if (i == block_wsz){
     /* nothing left to mark and credit header */
     if(work != NULL){
       /* we should take credit for it though */
