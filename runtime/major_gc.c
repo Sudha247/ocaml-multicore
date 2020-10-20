@@ -549,8 +549,6 @@ static void mark_stack_push(struct mark_stack* stk, value block,
   me = &stk->stack[stk->count++];
   me->block = block;
   me->offset = offset;
-  //me->end = end;
-  // return work;
 }
 
 /* to fit scanning_action */
@@ -562,94 +560,12 @@ static void mark_stack_push_act(void* state, value v, value* ignored) {
 
 void caml_darken_cont(value cont);
 
-// static intnat mark_slice_darken(struct mark_stack* stk, value v, mlsize_t i)
-//                                       //  int in_ephemeron, int *slice_pointers,)
-// {
-//   value child;
-//   header_t chd;
-//   intnat work = 0;
-
-//   child = Field (v, i);
-
-//   if (Is_block (child) && Is_markable (child)){
-//     chd = Hd_val(child);
-
-//     // forward tag - need to investigate
-
-//     if(Tag_hd(chd) == Infix_tag){
-//       child -= Infix_offset_val(child);
-//       chd = Hd_val(child);
-//     }
-//     if(Tag_hd(chd) < No_scan_tag){
-//       if(Has_status_hd(chd, global.UNMARKED)){
-//         work += mark_stack_push(stk, child, 0);
-//       }
-//       else
-//       {
-//         work++; // Account for header
-//       }
-//     }
-//   }
-
-//   return work;
-// }
-
-// static intnat mark_slice(intnat work){
-//   struct mark_stack* stk = Caml_state->mark_stack;
-//   mark_entry me = {0, 0};
-//   intnat me_end = 0;
-
-//   while (1)
-//   {
-//     int can_mark = 0;
-
-//     if(me.offset == me_end){
-//       if(stk->count > 0){
-//         me = stk->stack[--stk->count];
-//         me_end = Wosize_val(me.block);
-//         can_mark = 1;
-//       }
-//     }
-
-//     else
-//     {
-//       can_mark = 1;
-//     }
-
-//     if (work <= 0){
-//       if(can_mark){
-//         work -= mark_stack_push(stk, me.block, me.offset);
-//       }
-//       break;
-//     }
-
-//     if(can_mark){
-//       CAMLassert(Is_block(me.block) &&
-//                  Tag_val(me.block) < No_scan_tag &&
-//                  Tag_val(me.block) != Cont_tag);
-
-//       work -= mark_slice_darken (stk, me.block, me.offset);
-      
-
-//       work--;
-
-//       if(me.offset == me_end){
-//         work--;
-//       }
-//     }
-    
-//   }
-//   return work;
-// }
-/*
-TODO: Marking like trunk.
-*/
 static intnat do_some_marking(intnat budget) {
   struct mark_stack* stk = Caml_state->mark_stack;
   while (stk->count > 0) {
     mark_entry e = stk->stack[--stk->count];
     intnat end = Wosize_val(e.block);
-    while (e.offset != end) { //
+    while (e.offset != end) {
       value v;
       if (budget <= 0) {
         mark_stack_push(stk, e.block, e.offset, &budget);
@@ -661,7 +577,6 @@ static intnat do_some_marking(intnat budget) {
                  Tag_val(e.block) < No_scan_tag &&
                  Tag_val(e.block) != Cont_tag);
       v = Field(e.block, e.offset++);
-      //v = Op_val(e.block)[e.offset++];
       if (Is_markable(v)) {
         header_t hd = Hd_val(v);
         if (Tag_hd(hd) == Infix_tag) {
@@ -672,7 +587,6 @@ static intnat do_some_marking(intnat budget) {
         if (Has_status_hd(hd, global.UNMARKED)) {
           Caml_state->stat_blocks_marked++;
           if (Tag_hd(hd) == Cont_tag) {
-            //budget -= mark_stack_push(stk, e.block, e.offset);
             mark_stack_push(stk, e.block, e.offset, &budget);
             caml_darken_cont(v);
             e = (mark_entry){0};
@@ -695,10 +609,7 @@ again:
                 memory_order_relaxed);
             }
             if (Tag_hd(hd) < No_scan_tag) {
-              mark_entry child = {v, 0};
-              mark_stack_push(stk, e.block, e.offset, &budget);
-              e = child;
-              end = Wosize_hd(hd);
+              mark_stack_push(stk, v, 0, &budget);
             } else {
               budget -= Whsize_hd(hd);
             }
