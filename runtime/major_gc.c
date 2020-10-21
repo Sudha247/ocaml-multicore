@@ -509,7 +509,6 @@ static void mark_stack_push(struct mark_stack* stk, value block,
   value v;
   int i, block_wsz = Wosize_val(block), end;
   mark_entry* me;
-  // uintnat end = Wosize_val(block);
 
   CAMLassert(Is_block(block) && !Is_minor(block));
   CAMLassert(Tag_val(block) != Infix_tag);
@@ -556,6 +555,28 @@ static void mark_stack_push_act(void* state, value v, value* ignored) {
   mark_entry e = { v, 0 };
   if (Tag_val(v) < No_scan_tag && Tag_val(v) != Cont_tag)
     mark_stack_push(Caml_state->mark_stack, e.block, e.offset, NULL);
+}
+
+/* This function shrinks the mark stack back to the MARK_STACK_INIT_SIZE size
+   and is called at the end of a GC compaction to avoid a mark stack greater
+   than 1/32th of the heap. */
+void caml_shrink_mark_stack () {
+  struct mark_stack* stk = Caml_state->mark_stack;
+  intnat init_stack_bsize = MARK_STACK_INIT_SIZE * sizeof(mark_entry);
+  mark_entry* shrunk_stack;
+
+  caml_gc_log ("Shrinking mark stack to %"
+                  ARCH_INTNAT_PRINTF_FORMAT "uk bytes\n",
+                  init_stack_bsize);
+
+  shrunk_stack = (mark_entry*) caml_stat_resize_noexc ((char*) stk->stack,
+                                              init_stack_bsize);
+  if (shrunk_stack != NULL) {
+    stk->stack = shrunk_stack;
+    stk->size = MARK_STACK_INIT_SIZE;
+  }else{
+    caml_gc_log ("Mark stack shrinking failed");
+  }
 }
 
 void caml_darken_cont(value cont);
@@ -1332,6 +1353,7 @@ void caml_finish_marking () {
   if (!Caml_state->marking_done) {
     caml_ev_begin("major_gc/finish_marking");
     caml_empty_mark_stack();
+    caml_shrink_mark_stack();
     Caml_state->stat_major_words += Caml_state->allocated_words;
     Caml_state->allocated_words = 0;
     caml_ev_end("major_gc/finish_marking");
