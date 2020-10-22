@@ -581,15 +581,61 @@ void caml_shrink_mark_stack () {
 
 void caml_darken_cont(value cont);
 
+static void mark_slice_darken(struct mark_stack* stk, value v, mlsize_t i,
+                              intnat* work)
+{
+  value child;
+  header_t chd;
+
+  child = Field(v, i);
+
+  if (Is_markable(child)){
+    chd = Hd_val(child);
+    if(Tag_hd(chd) == Infix_tag){
+      child -= Infix_offset_hd(chd);
+      chd = Hd_val(child);
+    }
+    CAMLassert(!Has_status_hd(chd, global.GARBAGE));
+    if (Has_status_hd(chd, global.UNMARKED)){
+      Caml_state->stat_blocks_marked++;
+      if (Tag_hd(chd) == Cont_tag){
+        mark_stack_push(stk, child, 0, work);
+        caml_darken_cont(child);
+        *work -= Wosize_hd(chd);
+      } else{
+    again:
+      if (Tag_hd(chd) == Lazy_tag || Tag_hd(chd) == Forcing_tag){
+        if(!atomic_compare_exchange_strong(Hp_atomic_val(child), &chd,
+              With_status_hd(chd, global.MARKED))){
+                chd = Hd_val(child);
+                goto again;
+              }
+      } else {
+        atomic_store_explicit(
+          Hp_atomic_val(child),
+          With_status_hd(chd, global.MARKED),
+          memory_order_relaxed);
+      }
+      if(Tag_hd(chd) < No_scan_tag){
+        mark_stack_push(stk, child, 0, work);
+      }
+      else{
+        *work -= Wosize_hd(chd);; /* account for header */
+      }
+
+    }
+  }
+  }
+}
+
 static intnat do_some_marking(intnat budget) {
   struct mark_stack* stk = Caml_state->mark_stack;
   while (stk->count > 0) {
     mark_entry e = stk->stack[--stk->count];
     intnat end = Wosize_val(e.block);
     while (e.offset != end) {
-      value v;
       if (budget <= 0) {
-        mark_stack_push(stk, e.block, e.offset, &budget);
+        mark_stack_push(stk, e.block, e.offset, NULL);
         return budget;
       }
       budget--;
@@ -597,46 +643,7 @@ static intnat do_some_marking(intnat budget) {
                  Has_status_hd(Hd_val(e.block), global.MARKED) &&
                  Tag_val(e.block) < No_scan_tag &&
                  Tag_val(e.block) != Cont_tag);
-      v = Field(e.block, e.offset++);
-      if (Is_markable(v)) {
-        header_t hd = Hd_val(v);
-        if (Tag_hd(hd) == Infix_tag) {
-          v -= Infix_offset_hd(hd);
-          hd = Hd_val(v);
-        }
-        CAMLassert (!Has_status_hd(hd, global.GARBAGE));
-        if (Has_status_hd(hd, global.UNMARKED)) {
-          Caml_state->stat_blocks_marked++;
-          if (Tag_hd(hd) == Cont_tag) {
-            mark_stack_push(stk, e.block, e.offset, &budget);
-            caml_darken_cont(v);
-            e = (mark_entry){0};
-            end = 0;
-            budget -= Wosize_hd(hd); /* credit for header, done with mark_entry */
-          } else {
-again:
-            if (Tag_hd(hd) == Lazy_tag || Tag_hd(hd) == Forcing_tag) {
-              if (!atomic_compare_exchange_strong(
-                    Hp_atomic_val(v), &hd,
-                    With_status_hd(hd, global.MARKED))) {
-                hd = Hd_val(v);
-                goto again;
-              }
-            }
-            else {
-              atomic_store_explicit(
-                Hp_atomic_val(v),
-                With_status_hd(hd, global.MARKED),
-                memory_order_relaxed);
-            }
-            if (Tag_hd(hd) < No_scan_tag) {
-              mark_stack_push(stk, v, 0, &budget);
-            } else {
-              budget -= Whsize_hd(hd);
-            }
-          }
-        }
-      }
+      mark_slice_darken(stk, e.block, e.offset++, &budget);
     }
     budget--; /* credit for header */
   }
@@ -1526,6 +1533,21 @@ static void mark_stack_prune (struct mark_stack* stk)
       Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = pools[i].pool;
     }
 }
+
+// static void mark_stack_prune_aux(struct mark_stack* stk){
+
+//   int entry;
+//   uintnat mark_stack_count = stk->count;
+//   mark_entry* mark_stack = stk->stack;
+
+//   for(entry = 0; entry < mark_stack_count; entry++){
+//     mark_entry me = mark_stack[entry];
+//     value* block_op = Op_val(me.block);
+//     pool* pool = caml_pool_of_shared_block(block_op);
+
+//   }
+
+// }
 
 int caml_init_major_gc(caml_domain_state* d) {
   Caml_state->mark_stack = caml_stat_alloc_noexc(sizeof(struct mark_stack));

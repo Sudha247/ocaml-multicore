@@ -25,6 +25,8 @@ typedef struct pool {
   value* next_obj;
   struct domain* owner;
   sizeclass sz;
+  //value* redarken_start; /* first block in pool to redarken */
+  //value* redarken_end;
 } pool;
 CAML_STATIC_ASSERT(sizeof(pool) == Bsize_wsize(POOL_HEADER_WSIZE));
 #define POOL_HEADER_SZ sizeof(pool)
