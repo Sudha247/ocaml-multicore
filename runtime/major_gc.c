@@ -639,7 +639,7 @@ static intnat do_some_marking(intnat budget) {
         mark_stack_push(stk, e.block, e.offset, NULL);
         return budget;
       }
-      budget--;
+      //budget--; /* should we decrement budget here? */
       CAMLassert(Is_markable(e.block) &&
                  Has_status_hd(Hd_val(e.block), global.MARKED) &&
                  Tag_val(e.block) < No_scan_tag &&
@@ -1534,21 +1534,6 @@ static void mark_stack_prune (struct mark_stack* stk)
       Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = pools[i].pool;
     }
 }
-
-// static void mark_stack_prune_aux(struct mark_stack* stk){
-
-//   int entry;
-//   uintnat mark_stack_count = stk->count;
-//   mark_entry* mark_stack = stk->stack;
-
-//   for(entry = 0; entry < mark_stack_count; entry++){
-//     mark_entry me = mark_stack[entry];
-//     value* block_op = Op_val(me.block);
-//     pool* pool = caml_pool_of_shared_block(block_op);
-
-//   }
-
-// }
 
 int caml_init_major_gc(caml_domain_state* d) {
   Caml_state->mark_stack = caml_stat_alloc_noexc(sizeof(struct mark_stack));
