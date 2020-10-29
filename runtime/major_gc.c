@@ -1383,6 +1383,7 @@ static void mark_stack_prune(struct mark_stack* stk){
   caml_gc_log("Mark stack overflow. Postponing %d pools", Caml_state->pools_to_rescan_count);
   /* empty mark stack */
   stk->count = 0;
+  caml_skiplist_empty(&chunk_sklist);
 }
 
 int caml_init_major_gc(caml_domain_state* d) {
