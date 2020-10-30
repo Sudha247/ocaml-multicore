@@ -617,6 +617,8 @@ static intnat mark(intnat budget) {
     if (budget > 0) {
       struct pool* p = find_pool_to_rescan();
       if (p) {
+        if (Caml_state->mark_stack->count > Caml_state->mark_stack->size/4)
+          break;
         caml_redarken_pool(p, &mark_stack_push_act, 0);
       } else {
         update_ephe_info_for_marking_done();
