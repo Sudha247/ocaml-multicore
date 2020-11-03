@@ -34,6 +34,7 @@
 #include "caml/shared_heap.h"
 #include "caml/startup_aux.h"
 #include "caml/weak.h"
+#include "caml/skiplist.h"
 
 /* NB the MARK_STACK_INIT_SIZE must be larger than the number of objects
    that can be in a pool, see POOL_WSIZE */
@@ -612,10 +613,11 @@ again:
 /* mark until the budget runs out or marking is done */
 static intnat mark(intnat budget) {
   while (budget > 0 && !Caml_state->marking_done) {
-    budget = do_some_marking(Caml_state->mark_stack, budget);
+    struct mark_stack* stk = Caml_state->mark_stack;
+    budget = do_some_marking(stk, budget);
     if (budget > 0) {
       struct pool* p = find_pool_to_rescan();
-      if (p) {
+      if (p && stk->count < stk->size/4) {
         caml_redarken_pool(p, &mark_stack_push_act, 0);
       } else {
         update_ephe_info_for_marking_done();
@@ -1355,141 +1357,51 @@ static struct pool* find_pool_to_rescan()
   return p;
 }
 
-struct pool_count {
-  struct pool* pool;
-  int occurs;
-};
+// struct pool_count {
+//   struct pool* pool;
+//   int occurs;
+// };
 
-static int pool_count_cmp(const void* a, const void* b)
-{
-  const struct pool_count* p = a;
-  const struct pool_count* q = b;
-  return p->occurs - q->occurs;
-}
+// static int pool_count_cmp(const void* a, const void* b)
+// {
+//   const struct pool_count* p = a;
+//   const struct pool_count* q = b;
+//   return p->occurs - q->occurs;
+// }
 
 static void mark_stack_prune (struct mark_stack* stk)
 {
-  struct addrmap t = ADDRMAP_INIT;
-  int count = 0, entry;
-  addrmap_iterator i;
-  uintnat mark_stack_count = stk->count;
+  uintnat entry, mark_stack_count = stk->count;
   mark_entry* mark_stack = stk->stack;
 
-  /* space used by the computations below */
-  uintnat table_max = mark_stack_count / 100;
-  if (table_max < 1000) table_max = 1000;
+  struct skiplist chunk_sklist = SKIPLIST_STATIC_INITIALIZER;
 
-  /* amount of space we want to free up */
-  int entries_to_free = (uintnat)(mark_stack_count * 0.20);
+  /* Insert pools into skiplist*/
+  for(entry = 0; entry < mark_stack_count; entry ++){
+    mark_entry me = mark_stack[entry];
+    struct pool* p = caml_pool_of_shared_block(me.block);
+    if(!p) continue;
+    caml_skiplist_insert(&chunk_sklist, (uintnat) p, 
+                          0);
+  } 
 
-  /* We compress the mark stack by removing all of the objects from a
-     subset of pools, which are rescanned later. For efficiency, we
-     want to select those pools which occur most frequently, so that
-     we need to rescan as few pools as possible. However, we do not
-     have space to build a complete histogram.
+  /* Traverse through entire skiplist and put it into pools to rescan */
 
-     Using ~1% of the mark stack's space, we can find all of the
-     elements that occur at least 100 times using the Misra-Gries
-     heavy hitter algorithm (see J. Misra and D. Gries, "Finding
-     repeated elements", 1982). */
-
-  for (entry = 0; entry < mark_stack_count; entry++) {
-    struct pool* pool = caml_pool_of_shared_block(mark_stack[entry].block);
-    if (!pool) continue;
-    value p = (value)pool;
-    if (caml_addrmap_contains(&t, p)) {
-      /* if it's already present, increase the count */
-      (*caml_addrmap_insert_pos(&t, p)) ++;
-    } else if (count < table_max) {
-      /* if there's space, insert it with count 1 */
-      *caml_addrmap_insert_pos(&t, p) = 1;
-      count++;
-    } else {
-      /* otherwise, decrease all entries by 1 */
-      struct addrmap s = ADDRMAP_INIT;
-      int scount = 0;
-      for (i = caml_addrmap_iterator(&t);
-           caml_addrmap_iter_ok(&t, i);
-           i = caml_addrmap_next(&t, i)) {
-        value k = caml_addrmap_iter_key(&t, i);
-        value v = caml_addrmap_iter_value(&t, i);
-        if (v > 1) {
-          *caml_addrmap_insert_pos(&s, k) = v - 1;
-          scount++;
-        }
-      }
-      caml_addrmap_clear(&t);
-      t = s;
-      count = scount;
+  FOREACH_SKIPLIST_ELEMENT(e, &chunk_sklist, {
+    if(Caml_state->pools_to_rescan_len == Caml_state->pools_to_rescan_count){
+      Caml_state->pools_to_rescan_len = Caml_state->pools_to_rescan_len * 2 + 128;
+      Caml_state->pools_to_rescan =
+        caml_stat_resize(Caml_state->pools_to_rescan, Caml_state->pools_to_rescan_len * sizeof(struct pool *));
     }
-  }
+    struct pool* r = (struct pool*) (e->key);
+    Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = r;
+  });
 
-  /* t now contains all pools that occur at least 100 times.
-     If no pools occur at least 100 times, t is some arbitrary subset of pools.
-     Next, we get an accurate count of the occurrences of the pools in t */
+  caml_gc_log("Mark stack overflow. Postponing %d pools. %d entires", Caml_state->pools_to_rescan_count, (int) mark_stack_count);
 
-  for (i = caml_addrmap_iterator(&t);
-       caml_addrmap_iter_ok(&t, i);
-       i = caml_addrmap_next(&t, i)) {
-    *caml_addrmap_iter_val_pos(&t, i) = 0;
-  }
-  for (entry = 0; entry < mark_stack_count; entry++) {
-    value p = (value)caml_pool_of_shared_block(mark_stack[entry].block);
-    if (p && caml_addrmap_contains(&t, p))
-      (*caml_addrmap_insert_pos(&t, p))++;
-  }
-
-  /* Next, find a subset of those pools that covers enough entries */
-
-  struct pool_count* pools = caml_stat_alloc(count * sizeof(struct pool_count));
-  int pos = 0;
-  for (i = caml_addrmap_iterator(&t);
-       caml_addrmap_iter_ok(&t, i);
-       i = caml_addrmap_next(&t, i)) {
-    struct pool_count* p = &pools[pos++];
-    p->pool = (struct pool*)caml_addrmap_iter_key(&t, i);
-    p->occurs = (int)caml_addrmap_iter_value(&t, i);
-  }
-  CAMLassert(pos == count);
-  caml_addrmap_clear(&t);
-
-  qsort(pools, count, sizeof(struct pool_count), &pool_count_cmp);
-
-  int start = count, total = 0;
-  while (start > 0 && total < entries_to_free) {
-    start--;
-    total += pools[start].occurs;
-  }
-
-
-
-  for (i = start; i < count; i++) {
-    *caml_addrmap_insert_pos(&t, (value)pools[i].pool) = 1;
-  }
-  int out = 0;
-  for (entry = 0; entry < mark_stack_count; entry++) {
-    mark_entry e = mark_stack[entry];
-    value p = (value)caml_pool_of_shared_block(e.block);
-    if (!(p && caml_addrmap_contains(&t, p))) {
-      mark_stack[out++] = e;
-    }
-  }
-  stk->count = out;
-
-  caml_gc_log("Mark stack overflow. Postponing %d pools (%.1f%%, leaving %d).",
-              count-start, 100. * (double)total / (double)mark_stack_count,
-              (int)stk->count);
-
-
-  /* Add the pools to rescan to domain's pools to rescan list */
-    for (i = start; i < count; i++) {
-      if (Caml_state->pools_to_rescan_count == Caml_state->pools_to_rescan_len) {
-        Caml_state->pools_to_rescan_len = Caml_state->pools_to_rescan_len * 2 + 128;
-        Caml_state->pools_to_rescan =
-          caml_stat_resize(Caml_state->pools_to_rescan, Caml_state->pools_to_rescan_len * sizeof(struct pool*));
-      }
-      Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = pools[i].pool;
-    }
+  /* empty mark stack */
+  stk->count = 0;
+  caml_skiplist_empty(&chunk_sklist);
 }
 
 int caml_init_major_gc(caml_domain_state* d) {
