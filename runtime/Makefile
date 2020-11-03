@@ -26,8 +26,8 @@ BYTECODE_C_SOURCES := $(addsuffix .c, \
   signals_byt printexc backtrace_byt backtrace compare ints \
   floats str array io extern intern hash sys meta parsing gc_ctrl md5 obj \
   lexing callback debugger weak finalise custom dynlink \
-  platform eventlog fiber shared_heap addrmap skiplist \
-  spacetime_byt afl $(UNIX_OR_WIN32) bigarray main domain)
+  platform eventlog fiber shared_heap addrmap \
+  spacetime_byt afl $(UNIX_OR_WIN32) bigarray main domain skiplist)
 
 NATIVE_C_SOURCES := $(addsuffix .c, \
   startup_aux startup_nat main fail_nat roots signals \
@@ -37,7 +37,7 @@ NATIVE_C_SOURCES := $(addsuffix .c, \
   globroots backtrace_nat backtrace dynlink_nat debugger meta \
   platform eventlog fiber shared_heap addrmap frame_descriptors skiplist \
   dynlink clambda_checks spacetime_nat spacetime_snapshot afl bigarray \
-  domain)
+  domain skiplist)
 
 # The other_files variable stores the list of files whose dependencies
 # should be computed by `make depend` although they do not need to be
