@@ -39,7 +39,7 @@
 /* NB the MARK_STACK_INIT_SIZE must be larger than the number of objects
    that can be in a pool, see POOL_WSIZE */
 #define MARK_STACK_INIT_SIZE (1 << 12)
-#define INITIAL_POOLS_TO_RESCAN_LEN 4
+#define INITIAL_POOLS_TO_RESCAN_LEN 128
 
 typedef struct {
   value block;
@@ -1374,34 +1374,38 @@ static void mark_stack_prune (struct mark_stack* stk)
   uintnat entry, mark_stack_count = stk->count;
   mark_entry* mark_stack = stk->stack;
 
-  struct skiplist chunk_sklist = SKIPLIST_STATIC_INITIALIZER;
+  struct addrmap t = ADDRMAP_INIT;
+  addrmap_iterator i;
 
-  /* Insert pools into skiplist*/
-  for(entry = 0; entry < mark_stack_count; entry ++){
+  for(entry = 0; entry < mark_stack_count; entry++){
     mark_entry me = mark_stack[entry];
-    struct pool* p = caml_pool_of_shared_block(me.block);
-    if(!p) continue;
-    caml_skiplist_insert(&chunk_sklist, (uintnat) p, 
-                          0);
-  } 
-
-  /* Traverse through entire skiplist and put it into pools to rescan */
-
-  FOREACH_SKIPLIST_ELEMENT(e, &chunk_sklist, {
-    if(Caml_state->pools_to_rescan_len == Caml_state->pools_to_rescan_count){
-      Caml_state->pools_to_rescan_len = Caml_state->pools_to_rescan_len * 2 + 128;
-      Caml_state->pools_to_rescan =
-        caml_stat_resize(Caml_state->pools_to_rescan, Caml_state->pools_to_rescan_len * sizeof(struct pool *));
+    struct pool* pool = caml_pool_of_shared_block(me.block);
+    if(!pool) continue;
+    value p = (value) pool;
+    if(caml_addrmap_contains(&t, p)){
+      /* if it's already present, increase the count */
+      (*caml_addrmap_insert_pos(&t, p)) ++;
     }
-    struct pool* r = (struct pool*) (e->key);
-    Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = r;
-  });
+    else{
+      /* if it's already present, increase the count */
+      *caml_addrmap_insert_pos(&t, p) = 1;
+    }
+  }
 
-  caml_gc_log("Mark stack overflow. Postponing %d pools. %d entires", Caml_state->pools_to_rescan_count, (int) mark_stack_count);
+  for (i = caml_addrmap_iterator(&t); 
+          caml_addrmap_iter_ok(&t, i);
+          i = caml_addrmap_next(&t, i)){
+    value p = (value) caml_addrmap_iter_key(&t, i);
+    if (Caml_state->pools_to_rescan_count == Caml_state->pools_to_rescan_len) {
+        Caml_state->pools_to_rescan_len = Caml_state->pools_to_rescan_len * 2 + 128;
+        Caml_state->pools_to_rescan =
+          caml_stat_resize(Caml_state->pools_to_rescan, Caml_state->pools_to_rescan_len * sizeof(struct pool*));
+      }
+      Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = (struct pool*) p;
+  }
 
-  /* empty mark stack */
   stk->count = 0;
-  caml_skiplist_empty(&chunk_sklist);
+
 }
 
 int caml_init_major_gc(caml_domain_state* d) {
