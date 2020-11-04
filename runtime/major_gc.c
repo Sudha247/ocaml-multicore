@@ -613,12 +613,11 @@ again:
 /* mark until the budget runs out or marking is done */
 static intnat mark(intnat budget) {
   while (budget > 0 && !Caml_state->marking_done) {
+    struct mark_stack* stk = Caml_state->mark_stack;
     budget = do_some_marking(Caml_state->mark_stack, budget);
     if (budget > 0) {
       struct pool* p = find_pool_to_rescan();
-      if (p) {
-        if (Caml_state->mark_stack->count > Caml_state->mark_stack->size/4)
-          break;
+      if (p && stk->count < stk->size/4) {
         caml_redarken_pool(p, &mark_stack_push_act, 0);
       } else {
         update_ephe_info_for_marking_done();
