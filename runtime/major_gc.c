@@ -614,10 +614,10 @@ again:
 static intnat mark(intnat budget) {
   while (budget > 0 && !Caml_state->marking_done) {
     struct mark_stack* stk = Caml_state->mark_stack;
-    budget = do_some_marking(Caml_state->mark_stack, budget);
+    budget = do_some_marking(stk, budget);
     if (budget > 0) {
       struct pool* p = find_pool_to_rescan();
-      if (p && stk->count < stk->size/4) {
+      if (p) {
         caml_redarken_pool(p, &mark_stack_push_act, 0);
       } else {
         update_ephe_info_for_marking_done();
