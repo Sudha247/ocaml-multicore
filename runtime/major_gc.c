@@ -1363,7 +1363,7 @@ static void mark_stack_prune(struct mark_stack* stk){
 
   struct skiplist chunk_sklist = SKIPLIST_STATIC_INITIALIZER;
   /* Insert all used pools into skiplist */
-  for(entry = 0; entry < mark_stack_count; entry++){
+  for(entry = mark_stack_count - 1; entry > mark_stack_count * 0.25; entry--){
     mark_entry me = mark_stack[entry];
     struct pool* pool = caml_pool_of_shared_block(me.block);
     if (!pool) continue;
@@ -1377,14 +1377,13 @@ static void mark_stack_prune(struct mark_stack* stk){
       Caml_state->pools_to_rescan =
         caml_stat_resize(Caml_state->pools_to_rescan, Caml_state->pools_to_rescan_len * sizeof(struct pool *));
     }
-    uintnat r = (uintnat) (e->key);
-    Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = (struct pool*) r;
+    Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = (struct pool*) (e->key);;
   });
 
   caml_gc_log("Mark stack overflow. Postponing %d pools", Caml_state->pools_to_rescan_count);
   /* empty mark stack */
-  stk->count = 0;
-  caml_skiplist_empty(&chunk_sklist);
+  stk->count = stk->count * 0.25;
+  
 }
 
 int caml_init_major_gc(caml_domain_state* d) {
