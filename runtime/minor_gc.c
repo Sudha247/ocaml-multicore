@@ -47,6 +47,8 @@ struct generic_table CAML_TABLE_STRUCT(char);
 static atomic_intnat domains_finished_minor_gc;
 
 static atomic_uintnat caml_minor_cycles_started = 0;
+static caml_plat_mutex domains_lock = CAML_PLAT_MUTEX_INITIALIZER;
+// static caml_plat_cond domains_cond = CAML_PLAT_COND_INITIALIZER(&domains_lock);
 
 double caml_extra_heap_resources_minor = 0;
 
@@ -540,7 +542,13 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
 
   caml_ev_begin("minor_gc/global_roots");
   if( participating[0] == caml_domain_self() || !not_alone ) { // TODO: We should distribute this work
-    caml_scan_global_young_roots(oldify_one, &st);
+
+    if(atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) < 1){
+      if(caml_plat_try_lock(&domains_lock)){
+        caml_scan_global_young_roots(oldify_one, &st);
+        caml_plat_unlock(&domains_lock);
+      }
+    }
   }
   caml_ev_end("minor_gc/global_roots");
 
