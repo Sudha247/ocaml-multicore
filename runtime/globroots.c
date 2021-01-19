@@ -298,12 +298,10 @@ void caml_scan_global_young_roots(scanning_action f, void* fdata)
   caml_iterate_global_roots(f, &caml_global_roots_young, fdata);
   /* Move young roots to old roots */
 
-  caml_plat_lock(&roots_mutex);
   FOREACH_SKIPLIST_ELEMENT(e, &caml_global_roots_young, {
       value * r = (value *) (e->key);
       caml_skiplist_insert(&caml_global_roots_old, (uintnat) r, 0);
     });
-  caml_plat_unlock(&roots_mutex);
 
   caml_skiplist_empty(&caml_global_roots_young);
 }
