@@ -26,6 +26,7 @@ CAMLextern void (*caml_scan_roots_hook)(scanning_action, void*, struct domain*);
 
 void caml_do_roots (scanning_action f, void* data, struct domain* d,
                     int do_final_val);
+void caml_do_global_roots (scanning_action f, void* fdata, struct domain* d);
 void caml_do_local_roots(scanning_action f, void* data,
 						struct caml__roots_block* local_roots,
                         struct stack_info *current_stack,

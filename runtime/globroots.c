@@ -280,10 +280,11 @@ static void scan_native_globals(scanning_action f, void* fdata)
 #endif
 
 /* Scan all global roots */
-void caml_scan_global_roots(scanning_action f, void* fdata) {
+void caml_scan_global_roots(scanning_action f, void* fdata, struct domain* d) 
+{
   caml_iterate_global_roots(f, &caml_global_roots, fdata);
-  caml_iterate_global_roots(f, &caml_global_roots_young, fdata);
-  caml_iterate_global_roots(f, &caml_global_roots_old, fdata);
+  caml_iterate_global_roots(f, &d->state->domain_roots->caml_global_roots_young, fdata);
+  caml_iterate_global_roots(f, &d->state->domain_roots->caml_global_roots_old, fdata);
 
   #ifdef NATIVE_CODE
   scan_native_globals(f, fdata);
@@ -306,4 +307,22 @@ void caml_scan_global_young_roots(scanning_action f, void* fdata)
   caml_plat_unlock(&roots_mutex);
 
   caml_skiplist_empty(&caml_global_roots_young);
+}
+
+void caml_split_global_roots(struct domain* curr_domain)
+{
+  FOREACH_SKIPLIST_ELEMENT(e, &caml_global_roots, {
+    value * r = (value *) e->key;
+    caml_skiplist_insert(&(curr_domain->state->domain_roots->caml_global_roots), (uintnat) r, 0);
+  });
+
+   FOREACH_SKIPLIST_ELEMENT(e, &caml_global_roots_old, {
+    value * r = (value *) e->key;
+    caml_skiplist_insert(&(curr_domain->state->domain_roots->caml_global_roots_old), (uintnat) r, 0);
+  });
+
+  FOREACH_SKIPLIST_ELEMENT(e, &caml_global_roots_young, {
+    value * r = (value *) e->key;
+    caml_skiplist_insert(&(curr_domain->state->domain_roots->caml_global_roots_young), (uintnat) r, 0);
+  });
 }

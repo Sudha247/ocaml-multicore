@@ -48,10 +48,20 @@ void caml_do_roots (scanning_action f, void* fdata, struct domain* d, int do_fin
 {
   caml_do_local_roots(f, fdata, d->state->local_roots, d->state->current_stack, d->state->gc_regs);
   if (caml_scan_roots_hook != NULL) (*caml_scan_roots_hook)(f, fdata, d);
-  caml_scan_global_roots(f, fdata);
   caml_final_do_roots(f, fdata, d, do_final_val);
 
 }
+
+void caml_do_global_roots (scanning_action f, void* fdata, struct domain* d)
+{
+  caml_split_global_roots(d);
+  caml_scan_global_roots(f, fdata, d);
+}
+
+// void caml_do_global_roots_domain(scanning_action f, void* fdata, struct domain* d)
+// {
+//   caml_scan_global_roots_domain(d, f, fdata);
+// }
 
 CAMLexport void caml_do_local_roots (scanning_action f, void* fdata,
                                      struct caml__roots_block *local_roots,

@@ -1000,6 +1000,7 @@ static void cycle_all_domains_callback(struct domain* domain, void* unused,
   if (caml_params->verify_heap) {
     struct heap_verify_state* ver = caml_verify_begin();
     caml_do_roots (&caml_verify_root, ver, domain, 1);
+    caml_do_global_roots(&caml_verify_root, ver, domain);
     caml_verify_heap(ver);
     caml_gc_log("Heap verified");
     caml_global_barrier();
@@ -1017,6 +1018,7 @@ static void cycle_all_domains_callback(struct domain* domain, void* unused,
 
   caml_ev_begin("major_gc/roots");
   caml_do_roots (&caml_darken, NULL, domain, 0);
+  caml_do_global_roots(&caml_darken, NULL, domain);
   caml_ev_end("major_gc/roots");
 
   if (domain->state->mark_stack->count == 0) {
@@ -1439,6 +1441,12 @@ int caml_init_major_gc(caml_domain_state* d) {
   }
   Caml_state->mark_stack->count = 0;
   Caml_state->mark_stack->size = MARK_STACK_INIT_SIZE;
+
+  Caml_state->domain_roots = caml_stat_alloc_noexc(sizeof(struct domain_roots));
+  caml_skiplist_init(&Caml_state->domain_roots->caml_global_roots);
+  caml_skiplist_init(&Caml_state->domain_roots->caml_global_roots_old);
+  caml_skiplist_init(&Caml_state->domain_roots->caml_global_roots_young);
+
   /* Fresh domains do not need to performing marking or sweeping. */
   d->sweeping_done = 1;
   d->marking_done = 1;

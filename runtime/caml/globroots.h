@@ -22,9 +22,19 @@
 
 #include "mlvalues.h"
 #include "roots.h"
+#include "skiplist.h"
 
-void caml_scan_global_roots(scanning_action f, void* fdata);
+typedef struct domain_roots
+{
+  struct skiplist caml_global_roots;
+  struct skiplist caml_global_roots_young;
+  struct skiplist caml_global_roots_old;
+} domain_roots;
+
 void caml_scan_global_young_roots(scanning_action f, void* fdata);
+void caml_split_global_roots(struct domain* curr_domain);
+void caml_scan_global_roots(scanning_action f, void* fdata, struct domain* d); 
+
 
 #ifdef NATIVE_CODE
 void caml_register_dyn_global(void *v);
