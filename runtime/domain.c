@@ -399,7 +399,7 @@ enum domain_status { Dom_starting, Dom_started, Dom_failed };
 struct domain_startup_params {
   struct interruptor* parent;
   enum domain_status status;
-  caml_root callback;
+  caml_root domain_callback;
   dom_internal* newdom;
   uintnat unique_id;
 };
@@ -509,7 +509,7 @@ static void domain_terminate();
 static void* domain_thread_func(void* v)
 {
   struct domain_startup_params* p = v;
-  caml_root callback = p->callback;
+  caml_root domain_callback = p->domain_callback;
 
   create_domain(caml_params->init_minor_heap_wsz);
   p->newdom = domain_self;
@@ -530,8 +530,8 @@ static void* domain_thread_func(void* v)
     caml_gc_log("Domain starting (unique_id = %"ARCH_INTNAT_PRINTF_FORMAT"u)",
                 domain_self->interruptor.unique_id);
     caml_domain_start_hook();
-    caml_callback(caml_read_root(callback), Val_unit);
-    caml_delete_root(callback);
+    caml_callback(caml_read_root(domain_callback), Val_unit);
+    caml_delete_root(domain_callback);
     domain_terminate();
   } else {
     caml_gc_log("Failed to create domain");
@@ -541,9 +541,9 @@ static void* domain_thread_func(void* v)
 
 #define Domainthreadptr_val(val) ((struct domain_thread**)Data_custom_val(val))
 
-CAMLprim value caml_domain_spawn(value callback)
+CAMLprim value caml_domain_spawn(value domain_callback)
 {
-  CAMLparam1 (callback);
+  CAMLparam1 (domain_callback);
   struct domain_startup_params p;
   pthread_t th;
   int err;
@@ -552,7 +552,7 @@ CAMLprim value caml_domain_spawn(value callback)
   p.parent = &domain_self->interruptor;
   p.status = Dom_starting;
 
-  p.callback = caml_create_root(callback);
+  p.domain_callback = caml_create_root(domain_callback);
 
   err = pthread_create(&th, 0, domain_thread_func, (void*)&p);
   if (err) {
@@ -574,7 +574,7 @@ CAMLprim value caml_domain_spawn(value callback)
     Assert (p.status == Dom_failed);
     /* failed */
     pthread_join(th, 0);
-    caml_delete_root(p.callback);
+    caml_delete_root(p.domain_callback);
     caml_failwith("failed to allocate domain");
   }
   install_backup_thread(domain_self);
