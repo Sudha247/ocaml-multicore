@@ -399,7 +399,7 @@ enum domain_status { Dom_starting, Dom_started, Dom_failed };
 struct domain_startup_params {
   struct interruptor* parent;
   enum domain_status status;
-  caml_root domain_callback;
+  value* domain_callback;
   dom_internal* newdom;
   uintnat unique_id;
 };
@@ -551,7 +551,9 @@ CAMLprim value caml_domain_spawn(value domain_callback)
   p.parent = &domain_self->interruptor;
   p.status = Dom_starting;
 
-  p.domain_callback = caml_create_root(domain_callback);
+  p.domain_callback = (value*) caml_stat_alloc_noexc(sizeof(value));
+  *p.domain_callback = domain_callback;
+  caml_register_generational_global_root(p.domain_callback);
 
   err = pthread_create(&th, 0, domain_thread_func, (void*)&p);
   if (err) {
@@ -573,7 +575,8 @@ CAMLprim value caml_domain_spawn(value domain_callback)
     Assert (p.status == Dom_failed);
     /* failed */
     pthread_join(th, 0);
-    caml_delete_root(p.domain_callback);
+    caml_remove_generational_global_root(p.domain_callback);
+    caml_stat_free(p.domain_callback);
     caml_failwith("failed to allocate domain");
   }
   install_backup_thread(domain_self);
