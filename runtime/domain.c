@@ -529,7 +529,6 @@ static void* domain_thread_func(void* v)
     caml_gc_log("Domain starting (unique_id = %"ARCH_INTNAT_PRINTF_FORMAT"u)",
                 domain_self->interruptor.unique_id);
     caml_domain_start_hook();
-    // value callback_val = caml_read_root(domain_callback);
     caml_callback(*temp_callback, Val_unit);
     domain_terminate();
   } else {
