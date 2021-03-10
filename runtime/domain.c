@@ -510,7 +510,7 @@ static void* domain_thread_func(void* v)
 {
   struct domain_startup_params* p = v;
   caml_root domain_callback = p->domain_callback;
-
+  value *temp_callback = (value*) p->domain_callback;
   create_domain(caml_params->init_minor_heap_wsz);
   p->newdom = domain_self;
 
@@ -530,7 +530,8 @@ static void* domain_thread_func(void* v)
     caml_gc_log("Domain starting (unique_id = %"ARCH_INTNAT_PRINTF_FORMAT"u)",
                 domain_self->interruptor.unique_id);
     caml_domain_start_hook();
-    caml_callback(caml_read_root(domain_callback), Val_unit);
+    // value callback_val = caml_read_root(domain_callback);
+    caml_callback(*temp_callback, Val_unit);
     caml_delete_root(domain_callback);
     domain_terminate();
   } else {
