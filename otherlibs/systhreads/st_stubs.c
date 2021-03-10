@@ -219,7 +219,6 @@ static caml_thread_t caml_thread_new_info(void)
   th->backtrace_buffer = NULL;
   th->backtrace_last_exn = Val_unit;
   th->domain_id = d->state->id;
-  // caml_register_generational_global_root(&th->backtrace_last_exn);
 
   #ifndef NATIVE_CODE
   th->trap_sp_off = 1;
@@ -260,7 +259,6 @@ static void caml_thread_remove_info(caml_thread_t th)
   th->next->prev = th->prev;
   th->prev->next = th->next;
   caml_free_stack(th->current_stack);
-  // caml_remove_generational_global_root(&th->backtrace_last_exn);
   caml_stat_free(th);
   return;
 }
