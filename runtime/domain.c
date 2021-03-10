@@ -509,7 +509,6 @@ static void domain_terminate();
 static void* domain_thread_func(void* v)
 {
   struct domain_startup_params* p = v;
-  caml_root domain_callback = p->domain_callback;
   value *temp_callback = (value*) p->domain_callback;
   create_domain(caml_params->init_minor_heap_wsz);
   p->newdom = domain_self;
@@ -532,7 +531,6 @@ static void* domain_thread_func(void* v)
     caml_domain_start_hook();
     // value callback_val = caml_read_root(domain_callback);
     caml_callback(*temp_callback, Val_unit);
-    caml_delete_root(domain_callback);
     domain_terminate();
   } else {
     caml_gc_log("Failed to create domain");
