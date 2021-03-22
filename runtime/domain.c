@@ -276,10 +276,8 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
       goto reallocate_minor_heap_failure;
     }
 
-    domain_state->dls_root = caml_create_root_noexc(Val_unit);
-    if(domain_state->dls_root == NULL) {
-      goto create_root_failure;
-    }
+    domain_state->dls_root = Val_unit;
+    caml_register_generational_global_root(&domain_state->dls_root);
 
     domain_state->stack_cache = caml_alloc_stack_cache();
     if(domain_state->stack_cache == NULL) {
@@ -293,6 +291,8 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
     }
 
     domain_state->backtrace_buffer = NULL;
+    domain_state->backtrace_last_exn = Val_unit;
+    caml_register_generational_global_root(&domain_state->backtrace_last_exn);
 #ifndef NATIVE_CODE
     domain_state->external_raise = NULL;
     domain_state->trap_sp_off = 1;
@@ -313,8 +313,6 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
   caml_free_stack(domain_state->current_stack);
 alloc_main_stack_failure:
 create_stack_cache_failure:
-  caml_delete_root(domain_state->dls_root);
-create_root_failure:
 reallocate_minor_heap_failure:
   caml_teardown_major_gc();
 init_major_gc_failure:
@@ -413,7 +411,7 @@ enum domain_status { Dom_starting, Dom_started, Dom_failed };
 struct domain_startup_params {
   struct interruptor* parent;
   enum domain_status status;
-  caml_root callback;
+  value* callback;
   dom_internal* newdom;
   uintnat unique_id;
 };
@@ -525,7 +523,7 @@ static void domain_terminate();
 static void* domain_thread_func(void* v)
 {
   struct domain_startup_params* p = v;
-  caml_root callback = p->callback;
+  value *domain_callback = (value*) p->callback;
 
   create_domain(caml_params->init_minor_heap_wsz);
   p->newdom = domain_self;
@@ -546,8 +544,9 @@ static void* domain_thread_func(void* v)
     caml_gc_log("Domain starting (unique_id = %"ARCH_INTNAT_PRINTF_FORMAT"u)",
                 domain_self->interruptor.unique_id);
     caml_domain_start_hook();
-    caml_callback(caml_read_root(callback), Val_unit);
-    caml_delete_root(callback);
+    caml_callback(*domain_callback, Val_unit);
+    caml_remove_generational_global_root(domain_callback);
+    caml_stat_free(domain_callback);
     domain_terminate();
   } else {
     caml_gc_log("Failed to create domain");
@@ -568,7 +567,9 @@ CAMLprim value caml_domain_spawn(value callback)
   p.parent = &domain_self->interruptor;
   p.status = Dom_starting;
 
-  p.callback = caml_create_root(callback);
+  p.callback = (value*) caml_stat_alloc_noexc(sizeof(value));
+  *p.callback = callback;
+  caml_register_generational_global_root(p.callback);
 
   err = pthread_create(&th, 0, domain_thread_func, (void*)&p);
   if (err) {
@@ -590,7 +591,8 @@ CAMLprim value caml_domain_spawn(value callback)
     Assert (p.status == Dom_failed);
     /* failed */
     pthread_join(th, 0);
-    caml_delete_root(p.callback);
+    caml_remove_generational_global_root(p.callback);
+    caml_stat_free(p.callback);
     caml_failwith("failed to allocate domain");
   }
   install_backup_thread(domain_self);
@@ -1234,7 +1236,6 @@ static void domain_terminate()
   int finished = 0;
 
   caml_gc_log("Domain terminating");
-  caml_delete_root(domain_state->dls_root);
   s->terminating = 1;
 
   while (!finished) {
@@ -1280,6 +1281,8 @@ static void domain_terminate()
     caml_plat_unlock(&s->lock);
   }
   caml_sample_gc_collect(domain_state);
+  caml_remove_generational_global_root(&domain_state->dls_root);
+  caml_remove_generational_global_root(&domain_state->backtrace_last_exn);
 
   caml_stat_free(domain_state->final_info);
   // run the domain termination hook
@@ -1545,12 +1548,12 @@ CAMLprim value caml_ml_domain_cpu_relax(value t)
 CAMLprim value caml_domain_dls_set(value t)
 {
   CAMLnoalloc;
-  caml_modify_root(Caml_state->dls_root, t);
+  caml_modify_generational_global_root(&Caml_state->dls_root, t);
   return Val_unit;
 }
 
 CAMLprim value caml_domain_dls_get(value unused)
 {
   CAMLnoalloc;
-  return caml_read_root(Caml_state->dls_root);
+  return Caml_state->dls_root;
 }
