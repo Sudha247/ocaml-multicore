@@ -120,6 +120,14 @@ let try_force_gen_lazy_block ~only_val (blk : 'arg lazy_t) =
    argument. This function is here for the sake of completeness, and
    for debugging purpose. *)
 let force_gen ~only_val (lzv : 'arg lazy_t) =
+  (* Using [Sys.opaque_identity] prevents two potential problems:
+       - If the value is known to have Forward_tag, then its tag could have
+         changed during GC, so that information must be forgotten (see GPR#713
+         and issue #7301)
+       - If the value is known to be immutable, then if the compiler
+         cannot prove that the last branch is not taken it will issue a
+         warning 59 (modification of an immutable value) *)
+  let lzv = Sys.opaque_identity lzv in
   let x = Obj.repr lzv in
   (* XXX No safe points start *)
   let t = Obj.tag x in
@@ -137,17 +145,4 @@ let try_force_gen ~only_val (lzv : 'arg lazy_t) =
   else if t <> Obj.lazy_tag && t <> Obj.forcing_tag then Some (Obj.obj x : 'arg)
   else try_force_gen_lazy_block ~only_val lzv
 
-  let force (lzv : 'arg lazy_t) =
-    (* Using [Sys.opaque_identity] prevents two potential problems:
-       - If the value is known to have Forward_tag, then its tag could have
-         changed during GC, so that information must be forgotten (see GPR#713
-         and issue #7301)
-       - If the value is known to be immutable, then if the compiler
-         cannot prove that the last branch is not taken it will issue a
-         warning 59 (modification of an immutable value) *)
-    let lzv = Sys.opaque_identity lzv in
-    let x = Obj.repr lzv in
-    let t = Obj.tag x in
-    if t = Obj.forward_tag then (Obj.obj (Obj.field x 0) : 'arg) else
-    if t <> Obj.lazy_tag && t <> Obj.forcing_tag then (Obj.obj x : 'arg)
-    else force_lazy_block lzv
+let force (lzv : 'arg lazy_t) = force_gen ~only_val:false lzv
