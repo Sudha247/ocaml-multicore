@@ -279,6 +279,9 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
     domain_state->dls_root = Val_unit;
     caml_register_generational_global_root(&domain_state->dls_root);
 
+    domain_state->unique_token_root = caml_alloc_1(Abstract_tag, Val_unit);
+    caml_register_generational_global_root(&domain_state->unique_token_root);
+
     domain_state->stack_cache = caml_alloc_stack_cache();
     if(domain_state->stack_cache == NULL) {
       goto create_stack_cache_failure;
@@ -313,6 +316,9 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
   caml_free_stack(domain_state->current_stack);
 alloc_main_stack_failure:
 create_stack_cache_failure:
+  caml_remove_generational_global_root(&domain_state->unique_token_root);
+  caml_delete_root(domain_state->dls_root);
+create_dls_root_failure:
 reallocate_minor_heap_failure:
   caml_teardown_major_gc();
 init_major_gc_failure:
@@ -624,7 +630,14 @@ struct domain* caml_domain_of_id(int id)
 
 CAMLprim value caml_ml_domain_id(value unit)
 {
+  CAMLnoalloc;
   return Val_int(domain_self->interruptor.unique_id);
+}
+
+CAMLprim value caml_ml_domain_unique_token (value unit)
+{
+  CAMLnoalloc;
+  return Caml_state->unique_token_root;
 }
 
 static const uintnat INTERRUPT_MAGIC = (uintnat)(-1);
@@ -1297,6 +1310,7 @@ static void domain_terminate()
   caml_sample_gc_collect(domain_state);
   caml_remove_generational_global_root(&domain_state->dls_root);
   caml_remove_generational_global_root(&domain_state->backtrace_last_exn);
+  caml_remove_generational_global_root(&domain_state->unique_token_root);
 
   caml_stat_free(domain_state->final_info);
   // run the domain termination hook
