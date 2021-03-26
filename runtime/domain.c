@@ -282,6 +282,9 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
     domain_state->unique_token_root = caml_alloc_1(Abstract_tag, Val_unit);
     caml_register_generational_global_root(&domain_state->unique_token_root);
 
+    domain_state->unique_token_root = caml_alloc_1(Abstract_tag, Val_unit);
+    caml_register_generational_global_root(&domain_state->unique_token_root);
+
     domain_state->stack_cache = caml_alloc_stack_cache();
     if(domain_state->stack_cache == NULL) {
       goto create_stack_cache_failure;
@@ -317,8 +320,7 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
 alloc_main_stack_failure:
 create_stack_cache_failure:
   caml_remove_generational_global_root(&domain_state->unique_token_root);
-  caml_delete_root(domain_state->dls_root);
-create_dls_root_failure:
+  caml_remove_generational_global_root(&domain_state->dls_root);
 reallocate_minor_heap_failure:
   caml_teardown_major_gc();
 init_major_gc_failure:
