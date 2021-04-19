@@ -83,9 +83,9 @@ let run i () =
     check_and_change i j;
   done
 
-  let _ =
-    for i = 1 to 5 do
-      let domains = Array.init (num_domains - 1) (fun i -> Domain.spawn(run i)) in
-      run (num_domains - 1) ();
-      Array.iter Domain.join domains
-    done
+let _ =
+  for i = 1 to 5 do
+    let domains = Array.init (num_domains - 1) (fun i -> Domain.spawn(run i)) in
+    run (num_domains - 1) ();
+    Array.iter Domain.join domains
+  done
